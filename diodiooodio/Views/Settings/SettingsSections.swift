@@ -169,17 +169,17 @@ struct SettingsAboutFooter: View {
         let startYear = 2026
         let currentYear = Calendar.current.component(.year, from: Date())
         let yearText = startYear == currentYear ? "\(startYear)" : "\(startYear)-\(currentYear)"
-        let githubURL = URL(string: "https://github.com/ronitsingh10/diodiooodio")
+        let githubURL = URL(string: "https://github.com/ronitsingh10/FineTune")
 
         return HStack(spacing: DesignTokens.Spacing.xs) {
             if let githubURL {
                 Link(destination: githubURL) {
-                    Text("\(Image(systemName: "star")) \(t("Star on GitHub", "GitHub에서 별표"))")
+                    Text("\(Image(systemName: "star")) \(t("View Upstream (FineTune)", "원본(FineTune) 보기"))")
                 }
             }
 
             Text("·")
-            Text("Copyright © \(yearText) Ronit Singh")
+            Text("Based on FineTune © \(yearText) Ronit Singh")
         }
         .font(DesignTokens.Typography.caption)
         .foregroundStyle(DesignTokens.Colors.textTertiary)

@@ -15,15 +15,16 @@
 
 ## Attribution
 
-This repository is based on the original **diodiooodio** project by **Ronit Singh**.
+This repository contains derivative work based on the original **FineTune** project by **Ronit Singh**.
 
 - Original author: Ronit Singh
-- Upstream project: [ronitsingh10/diodiooodio](https://github.com/ronitsingh10/diodiooodio)
+- Upstream project: [ronitsingh10/FineTune](https://github.com/ronitsingh10/FineTune)
 - Current repository: [jjunhaa0211/diodiooodio](https://github.com/jjunhaa0211/diodiooodio)
+- Additional attribution details: [NOTICE](NOTICE)
 
 ## License and Compliance
 
-This project is distributed under the **GNU General Public License v3.0 (GPL-3.0)**.
+This project is distributed under the **GNU General Public License v3.0 (GPL-3.0)**, consistent with the upstream FineTune license.
 
 If you redistribute this project (source or binaries), keep:
 
