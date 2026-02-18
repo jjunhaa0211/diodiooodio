@@ -1,0 +1,56 @@
+import SwiftUI
+
+/// RadioButton 구조체를 정의합니다.
+struct RadioButton: View {
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isSelected ? "inset.filled.circle" : "circle")
+                .font(.system(size: 14))
+                .symbolRenderingMode(isSelected ? .monochrome : .hierarchical)
+                .foregroundStyle(isSelected ? DesignTokens.Colors.defaultDevice : buttonColor)
+                .frame(
+                    minWidth: DesignTokens.Dimensions.minTouchTarget,
+                    minHeight: DesignTokens.Dimensions.minTouchTarget
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(isSelected ? "Default device" : "Set as default")
+        .animation(DesignTokens.Animation.hover, value: isHovered)
+    }
+
+    private var buttonColor: Color {
+        isHovered ? DesignTokens.Colors.interactiveHover : DesignTokens.Colors.interactiveDefault
+    }
+}
+
+// MARK: - 프리뷰
+
+#Preview("Radio Buttons") {
+    ComponentPreviewContainer {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            HStack {
+                RadioButton(isSelected: true) {}
+                Text("MacBook Pro Speakers")
+            }
+
+            HStack {
+                RadioButton(isSelected: false) {}
+                Text("AirPods Pro")
+            }
+
+            HStack {
+                RadioButton(isSelected: false) {}
+                Text("External Display")
+            }
+        }
+    }
+}
