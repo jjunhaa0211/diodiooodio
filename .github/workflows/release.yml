@@ -3,13 +3,15 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
     runs-on: macos-26
     permissions:
       contents: write
+    env:
+      HAS_SIGNING_SECRETS: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' && secrets.CERT_IDENTITY != '' && secrets.APPLE_ID != '' && secrets.APPLE_ID_PASSWORD != '' }}
 
     steps:
       - name: Checkout code
@@ -23,46 +25,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      - name: Install create-dmg dependencies
-        run: brew install graphicsmagick imagemagick
-
-      - name: Validate required release secrets
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CERT_IDENTITY: ${{ secrets.CERT_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      - name: Decide release mode
         run: |
-          set -euo pipefail
-          required=(
-            APPLE_CERTIFICATE_BASE64
-            APPLE_CERTIFICATE_PASSWORD
-            KEYCHAIN_PASSWORD
-            APPLE_TEAM_ID
-            CERT_IDENTITY
-            APPLE_ID
-            APPLE_ID_PASSWORD
-          )
-
-          missing=()
-          for key in "${required[@]}"; do
-            if [ -z "${!key:-}" ]; then
-              missing+=("$key")
-            fi
-          done
-
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Missing GitHub Actions secrets: ${missing[*]}"
-            echo "Configure repository secrets before running the release workflow."
-            exit 1
+          if [ "${HAS_SIGNING_SECRETS}" = "true" ]; then
+            echo "RELEASE_MODE=signed" >> "$GITHUB_ENV"
+            echo "Using signed release mode (DMG + notarization)."
+          else
+            echo "RELEASE_MODE=unsigned" >> "$GITHUB_ENV"
+            echo "::warning::Signing secrets missing. Falling back to unsigned ZIP release."
           fi
 
+      - name: Install create-dmg dependencies
+        if: env.RELEASE_MODE == 'signed'
+        run: brew install graphicsmagick imagemagick
+
       - name: Import signing certificate
+        if: env.RELEASE_MODE == 'signed'
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -72,66 +52,46 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           CERT_PATH="$RUNNER_TEMP/certificate.p12"
 
-          # Decode certificate
           echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH" || \
           echo -n "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$CERT_PATH"
 
-          if [ ! -s "$CERT_PATH" ]; then
-            echo "::error::Decoded certificate file is empty. Check APPLE_CERTIFICATE_BASE64."
-            exit 1
-          fi
-
-          # Validate the certificate payload and password before importing.
           openssl pkcs12 -in "$CERT_PATH" -passin "pass:$APPLE_CERTIFICATE_PASSWORD" -noout > /dev/null
 
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security default-keychain -d user -s "$KEYCHAIN_PATH"
 
-          # Import certificate to keychain
           security import "$CERT_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
             -A -t cert -f pkcs12 \
             -k "$KEYCHAIN_PATH"
 
-          # Allow codesign to access the certificate
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Add keychain to search list (prepend to ensure it's found first)
           CURRENT_KEYCHAINS=$(security list-keychains -d user | tr -d '"')
           security list-keychains -d user -s "$KEYCHAIN_PATH" $CURRENT_KEYCHAINS
 
-          # Verify certificate is available
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-
-      - name: Update ExportOptions with Team ID
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          sed -i '' "s/TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/g" ExportOptions.plist
-          cat ExportOptions.plist
 
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          echo "Setting version to $VERSION"
-
-          # Update MARKETING_VERSION (e.g., 1.1.0)
-          sed -i '' "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/g" diodiooodio.xcodeproj/project.pbxproj
-
-          # Update CURRENT_PROJECT_VERSION (build number) using run number for uniqueness
           BUILD_NUMBER=${{ github.run_number }}
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Setting version to $VERSION (build $BUILD_NUMBER)"
+
+          sed -i '' "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/g" diodiooodio.xcodeproj/project.pbxproj
           sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*/CURRENT_PROJECT_VERSION = $BUILD_NUMBER/g" diodiooodio.xcodeproj/project.pbxproj
 
-          echo "Version: $VERSION, Build: $BUILD_NUMBER"
-
-      - name: Build archive
+      - name: Signed build archive
+        if: env.RELEASE_MODE == 'signed'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          sed -i '' "s/TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/g" ExportOptions.plist
+
           xcodebuild -project diodiooodio.xcodeproj \
             -scheme diodiooodio \
             -configuration Release \
@@ -139,64 +99,83 @@ jobs:
             archive \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
 
-      - name: Export archive
+      - name: Signed export app
+        if: env.RELEASE_MODE == 'signed'
         run: |
           xcodebuild -exportArchive \
             -archivePath build/diodiooodio.xcarchive \
             -exportPath build/ \
             -exportOptionsPlist ExportOptions.plist
 
-          # Verify the app is signed
           codesign -dv --verbose=4 build/diodiooodio.app
 
-      - name: Create DMG
+      - name: Signed package DMG
+        if: env.RELEASE_MODE == 'signed'
         run: |
-          # create-dmg creates a nicely formatted DMG with Applications symlink
           npx create-dmg build/diodiooodio.app build/ --overwrite || true
 
-          # Rename to include version from tag
-          VERSION=${GITHUB_REF_NAME#v}
           DMG_NAME="diodiooodio-${VERSION}.dmg"
-
-          # Find and rename the created DMG (create-dmg names it "AppName Version.dmg")
           mv build/*.dmg "build/${DMG_NAME}"
-
-          echo "DMG_NAME=${DMG_NAME}" >> $GITHUB_ENV
-          echo "Created: build/${DMG_NAME}"
+          echo "DMG_NAME=${DMG_NAME}" >> "$GITHUB_ENV"
 
       - name: Sign DMG
+        if: env.RELEASE_MODE == 'signed'
         env:
           CERT_IDENTITY: ${{ secrets.CERT_IDENTITY }}
         run: |
-          # Sign the DMG with Developer ID
           codesign --force --sign "$CERT_IDENTITY" "build/$DMG_NAME"
-
-          # Verify signature
           codesign -dv --verbose=2 "build/$DMG_NAME"
 
       - name: Notarize DMG
+        if: env.RELEASE_MODE == 'signed'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Submit DMG for notarization and wait for result
           xcrun notarytool submit "build/$DMG_NAME" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
 
-          # Staple the notarization ticket to the DMG
           xcrun stapler staple "build/$DMG_NAME"
-
-          # Verify stapling
           xcrun stapler validate "build/$DMG_NAME"
 
-      - name: Create GitHub Release
+      - name: Unsigned build app
+        if: env.RELEASE_MODE == 'unsigned'
+        run: |
+          xcodebuild -project diodiooodio.xcodeproj \
+            -scheme diodiooodio \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Unsigned package ZIP
+        if: env.RELEASE_MODE == 'unsigned'
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release/diodiooodio.app"
+          ZIP_NAME="diodiooodio-${VERSION}.zip"
+
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "build/${ZIP_NAME}"
+          shasum -a 256 "build/${ZIP_NAME}"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+
+      - name: Create signed GitHub Release
+        if: env.RELEASE_MODE == 'signed'
         uses: softprops/action-gh-release@v1
         with:
           files: build/diodiooodio-*.dmg
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create unsigned GitHub Release
+        if: env.RELEASE_MODE == 'unsigned'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/diodiooodio-*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
