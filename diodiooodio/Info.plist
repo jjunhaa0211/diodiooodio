@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>diodiooodio</string>
+	<key>CFBundleName</key>
+	<string>diodiooodio</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.diodiooodio.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>diodiooodio</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>diodiooodio needs Automation access to control Apple Music playback and read current track metadata.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>diodiooodio needs access to Apple Music data to show now-playing information and media insights.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>diodiooodio needs access to control volume levels for individual applications.</string>
+</dict>
+</plist>
