@@ -1,6 +1,5 @@
 import SwiftUI
 import UserNotifications
-import FluidMenuBarExtra
 import AppKit
 import os
 
@@ -49,6 +48,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             urlHandler.handleURL(url)
         }
     }
+
+    // Menu bar app는 다음 실행 시 이전 윈도우(특히 빈 Settings)를 복원하지 않는다.
+    func applicationShouldSaveApplicationState(_ app: NSApplication) -> Bool {
+        false
+    }
+
+    // Menu bar app는 다음 실행 시 이전 윈도우(특히 빈 Settings)를 복원하지 않는다.
+    func applicationShouldRestoreApplicationState(_ app: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        false
+    }
 }
 
 @main
@@ -60,56 +73,25 @@ struct DiodiooodioApp: App {
     @State private var showMenuBarExtra = true
 
     var body: some Scene {
-        FluidMenuBarExtra("diodiooodio", systemImage: currentSystemImageName ?? "heart.fill", isInserted: systemIconBinding) {
+        MenuBarExtra(isInserted: $showMenuBarExtra) {
             menuBarContent
         }
-
-        FluidMenuBarExtra("diodiooodio", image: currentAssetImageName ?? "MenuBarIcon", isInserted: assetIconBinding) {
-            menuBarContent
+        label: {
+            if currentIconStyle.isSystemSymbol {
+                Label("diodiooodio", systemImage: currentIconStyle.iconName)
+            } else {
+                Label("diodiooodio", image: currentIconStyle.iconName)
+            }
         }
-
-        Window("MainUI", id: "main-ui") {
-            MainUIRootView(
-                audioEngine: audioEngine,
-                musicService: musicService,
-                notchController: notchController
-            )
-        }
-        .defaultSize(width: 1080, height: 700)
-        .windowStyle(.hiddenTitleBar)
+        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .appSettings) { }
-            MainUICommands()
         }
     }
 
     /// 현재 아이콘 style 값입니다.
     private var currentIconStyle: MenuBarIconStyle {
         audioEngine.settingsManager.appSettings.menuBarIconStyle
-    }
-
-    private var currentSystemImageName: String? {
-        currentIconStyle.isSystemSymbol ? currentIconStyle.iconName : nil
-    }
-
-    private var currentAssetImageName: String? {
-        currentIconStyle.isSystemSymbol ? nil : currentIconStyle.iconName
-    }
-
-    /// system 아이콘 binding 상태를 나타냅니다.
-    private var systemIconBinding: Binding<Bool> {
-        Binding(
-            get: { showMenuBarExtra && currentIconStyle.isSystemSymbol },
-            set: { showMenuBarExtra = $0 }
-        )
-    }
-
-    /// asset 아이콘 binding 상태를 나타냅니다.
-    private var assetIconBinding: Binding<Bool> {
-        Binding(
-            get: { showMenuBarExtra && !currentIconStyle.isSystemSymbol },
-            set: { showMenuBarExtra = $0 }
-        )
     }
 
     @ViewBuilder
@@ -122,6 +104,9 @@ struct DiodiooodioApp: App {
     }
 
     init() {
+        // 윈도우 상태 복원을 앱 단위로 비활성화한다.
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+
         let settings = SettingsManager()
         let engine = AudioEngine(settingsManager: settings)
         let music = AppleMusicNowPlayingService()
@@ -153,20 +138,6 @@ struct DiodiooodioApp: App {
         DispatchQueue.main.async {
             guard MainUIEntryRouter.shouldShowDynamicBarOnLaunch else { return }
             notch.show()
-        }
-    }
-}
-
-/// MainUI 메뉴 명령입니다.
-private struct MainUICommands: Commands {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some Commands {
-        CommandMenu("MainUI") {
-            Button("Open MainUI") {
-                MainUIEntryRouter.handleMainUISelection(openWindow: openWindow)
-            }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
         }
     }
 }
