@@ -9,9 +9,8 @@ struct OdioMenuBarApp: App {
             MenuBarContentView(viewModel: viewModel)
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(viewModel: viewModel)
+        .commands {
+            CommandGroup(replacing: .appSettings) { }
         }
     }
 }
