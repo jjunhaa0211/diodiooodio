@@ -34,9 +34,22 @@
 		79A607C62F05C9E10008D52A /* diodiooodioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = diodiooodioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		79A607B22F05C9E00008D52A /* Exceptions for "diodiooodio" folder in "diodiooodio" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 79A607AE2F05C9E00008D52A /* diodiooodio */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		79A607B12F05C9E00008D52A /* diodiooodio */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				79A607B22F05C9E00008D52A /* Exceptions for "diodiooodio" folder in "diodiooodio" target */,
+			);
 			path = diodiooodio;
 			sourceTree = "<group>";
 		};
