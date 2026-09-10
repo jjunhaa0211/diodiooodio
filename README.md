@@ -13,6 +13,20 @@
 - Dynamic Bar (Notch) modules for music, files, and time
 - URL scheme hooks for automation
 
+## Install
+
+Download the latest build from [Releases](https://github.com/jjunhaa0211/diodiooodio/releases) and drag `diodiooodio.app` into `/Applications`.
+
+Releases built without Apple signing secrets are ad-hoc signed rather than notarized, so macOS quarantines them on download and refuses to open the app. Clear the quarantine attribute once after installing:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/diodiooodio.app
+```
+
+The app is a menu bar app (`LSUIElement`), so it shows up in the menu bar with no Dock icon or main window.
+
+Ad-hoc signed builds also get a new code signature on every release, which means macOS drops the Automation and notification permissions each time you update. Re-grant them in **System Settings → Privacy & Security** after updating.
+
 ## Attribution
 
 This repository contains derivative work based on the original **FineTune** project by **Ronit Singh**.

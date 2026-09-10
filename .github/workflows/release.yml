@@ -28,13 +28,26 @@ jobs:
           node-version: "20"
 
       - name: Decide release mode
+        env:
+          MISSING_SECRETS: >-
+            ${{ secrets.APPLE_CERTIFICATE_BASE64 == '' && 'APPLE_CERTIFICATE_BASE64 ' || '' }}${{ secrets.APPLE_CERTIFICATE_PASSWORD == '' && 'APPLE_CERTIFICATE_PASSWORD ' || '' }}${{ secrets.KEYCHAIN_PASSWORD == '' && 'KEYCHAIN_PASSWORD ' || '' }}${{ secrets.APPLE_TEAM_ID == '' && 'APPLE_TEAM_ID ' || '' }}${{ secrets.CERT_IDENTITY == '' && 'CERT_IDENTITY ' || '' }}${{ secrets.APPLE_ID == '' && 'APPLE_ID ' || '' }}${{ secrets.APPLE_ID_PASSWORD == '' && 'APPLE_ID_PASSWORD' || '' }}
         run: |
           if [ "${HAS_SIGNING_SECRETS}" = "true" ]; then
             echo "RELEASE_MODE=signed" >> "$GITHUB_ENV"
             echo "Using signed release mode (DMG + notarization)."
+            echo "Release mode: **signed** (DMG + notarization)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "RELEASE_MODE=unsigned" >> "$GITHUB_ENV"
-            echo "::warning::Signing secrets missing. Falling back to unsigned ZIP release."
+            echo "::warning::Signing secrets missing (${MISSING_SECRETS}). Falling back to ad-hoc signed ZIP release."
+            {
+              echo "### :warning: Unsigned release"
+              echo
+              echo "Missing secrets: \`${MISSING_SECRETS}\`"
+              echo
+              echo "This release ships an ad-hoc signed ZIP instead of a notarized DMG."
+              echo "macOS quarantines it on download, so users have to run"
+              echo "\`xattr -dr com.apple.quarantine /Applications/diodiooodio.app\` before it opens."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Install create-dmg dependencies
@@ -89,25 +102,49 @@ jobs:
         if: env.RELEASE_MODE == 'signed'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERT_IDENTITY: ${{ secrets.CERT_IDENTITY }}
         run: |
+          set -euo pipefail
           sed -i '' "s/TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/g" ExportOptions.plist
 
+          # The project targets `Apple Development` with automatic signing, which
+          # cannot produce the Developer ID build that ExportOptions.plist asks
+          # for. Pin the distribution identity explicitly for the release build.
           xcodebuild -project diodiooodio.xcodeproj \
             -scheme diodiooodio \
             -configuration Release \
             -archivePath build/diodiooodio.xcarchive \
             archive \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$CERT_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER=""
 
       - name: Signed export app
         if: env.RELEASE_MODE == 'signed'
         run: |
+          set -euo pipefail
           xcodebuild -exportArchive \
             -archivePath build/diodiooodio.xcarchive \
             -exportPath build/ \
             -exportOptionsPlist ExportOptions.plist
 
           codesign -dv --verbose=4 build/diodiooodio.app
+
+      # `codesign -dv` only prints the signature, it never fails on a broken one.
+      # Verify for real so an unopenable app can never reach a release again.
+      - name: Verify signed app bundle
+        if: env.RELEASE_MODE == 'signed'
+        run: |
+          set -euo pipefail
+          APP_PATH="build/diodiooodio.app"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl -a -vvv -t exec "$APP_PATH"
+
+          test -f "$APP_PATH/Contents/_CodeSignature/CodeResources"
+          codesign -d --entitlements - --xml "$APP_PATH" \
+            | grep -q "com.apple.security.automation.apple-events"
 
       - name: Signed package DMG
         if: env.RELEASE_MODE == 'signed'
@@ -145,6 +182,7 @@ jobs:
       - name: Unsigned build app
         if: env.RELEASE_MODE == 'unsigned'
         run: |
+          set -euo pipefail
           xcodebuild -project diodiooodio.xcodeproj \
             -scheme diodiooodio \
             -configuration Release \
@@ -152,9 +190,40 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      # CODE_SIGNING_ALLOWED=NO leaves only the ad-hoc signature that the linker
+      # puts on the arm64 executable: the bundle gets no _CodeSignature seal and
+      # no entitlements, so macOS reports a downloaded copy as damaged and refuses
+      # to open it. Re-seal the bundle ad-hoc so the app is at least launchable.
+      - name: Unsigned ad-hoc sign app
+        if: env.RELEASE_MODE == 'unsigned'
+        run: |
+          set -euo pipefail
+          APP_PATH="build/DerivedData/Build/Products/Release/diodiooodio.app"
+
+          codesign --force --sign - \
+            --identifier com.diodiooodio.app \
+            --entitlements diodiooodio/diodiooodio.entitlements \
+            --options runtime \
+            --timestamp=none \
+            "$APP_PATH"
+
+      - name: Verify unsigned app bundle
+        if: env.RELEASE_MODE == 'unsigned'
+        run: |
+          set -euo pipefail
+          APP_PATH="build/DerivedData/Build/Products/Release/diodiooodio.app"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv --verbose=4 "$APP_PATH"
+
+          test -f "$APP_PATH/Contents/_CodeSignature/CodeResources"
+          codesign -d --entitlements - --xml "$APP_PATH" \
+            | grep -q "com.apple.security.automation.apple-events"
+
       - name: Unsigned package ZIP
         if: env.RELEASE_MODE == 'unsigned'
         run: |
+          set -euo pipefail
           APP_PATH="build/DerivedData/Build/Products/Release/diodiooodio.app"
           ZIP_NAME="diodiooodio-${VERSION}.zip"
 
@@ -177,5 +246,15 @@ jobs:
         with:
           files: build/diodiooodio-*.zip
           generate_release_notes: true
+          body: |
+            > **이 빌드는 Apple 공증(notarization)을 받지 않았습니다.**
+            > 서명 시크릿이 없어 ad-hoc 서명된 ZIP으로 배포됩니다.
+            > macOS가 "확인되지 않은 개발자" 또는 "손상되었습니다" 경고를 표시할 수 있습니다.
+            >
+            > 설치 후 아래 명령으로 격리 속성을 제거하세요:
+            >
+            > ```bash
+            > xattr -dr com.apple.quarantine /Applications/diodiooodio.app
+            > ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
